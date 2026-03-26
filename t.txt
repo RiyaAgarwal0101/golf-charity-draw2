@@ -1,0 +1,94 @@
+create extension if not exists "uuid-ossp";
+
+create table public.users (
+  id uuid primary key default uuid_generate_v4(),
+  email text not null unique,
+  role text not null default 'visitor', -- "visitor", "subscriber", "admin"
+  stripe_customer_id text,
+  stripe_subscription_id text,
+  stripe_subscription_status text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table public.subscriptions (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references public.users (id),
+  stripe_subscription_id text,
+  status text, -- 'active','canceled','incomplete'
+  plan text,   -- 'monthly','yearly'
+  price numeric,
+  created_at timestamptz default now(),
+  ends_at timestamptz
+);
+
+create table public.scores (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references public.users (id),
+  value int not null,
+  recorded_at timestamptz not null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table public.charities (
+  id uuid primary key default uuid_generate_v4(),
+  name text not null,
+  description text,
+  image_url text,
+  events text[],
+  is_active boolean default true,
+  created_at timestamptz default now()
+);
+
+create table public.user_charity_prefs (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references public.users (id),
+  charity_id uuid references public.charities (id),
+  contribution_percent numeric default 10.0, -- 10% minimum
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table public.draws (
+  id uuid primary key default uuid_generate_v4(),
+  month date not null, -- e.g., '2026-04-01'
+  status text default 'pending', -- 'pending','run','published'
+  jackpot_rollover numeric default 0.0,
+  created_at timestamptz default now()
+);
+
+create table public.draw_results (
+  id uuid primary key default uuid_generate_v4(),
+  draw_id uuid references public.draws (id),
+  user_id uuid references public.users (id),
+  numbers text[], -- user’s chosen 5 numbers
+  matching_count int, -- 3,4,5
+  prize_amount numeric,
+  is_paid boolean default false,
+  proof_url text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table public.users
+add column if not exists role text not null default 'subscriber';
+
+alter table public.users
+add column if not exists role text not null default 'subscriber';
+
+CREATE POLICY "insert own score"
+ON scores
+FOR INSERT
+WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "insert own score"
+ON scores
+FOR INSERT
+WITH CHECK (auth.uid() = user_id);
+
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+
+UPDATE users
+SET role = 'admin'
+WHERE id = '3a3006b4-bb84-4787-8c1e-e8f3fccf243a';
