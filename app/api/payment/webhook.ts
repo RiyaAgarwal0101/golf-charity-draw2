@@ -27,19 +27,24 @@ export async function POST(req: NextApiRequest, res: NextApiResponse) {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session
 
-    // Retrieve the customer and cast to Stripe.Customer
+    // Retrieve the customer and ensure it is not a deleted customer
     const customer = (await stripe.customers.retrieve(
       session.customer as string
     )) as Stripe.Customer
 
-    const userId = customer.metadata?.user_id // set this when creating session
+    const userId = customer.metadata?.user_id
     if (!userId) return res.status(200).json({})
 
     if (session.mode === 'subscription') {
-      // Retrieve the subscription and cast to Stripe.Subscription
+      // Retrieve subscription and cast correctly
       const subscription = (await stripe.subscriptions.retrieve(
         session.subscription as string
       )) as Stripe.Subscription
+
+      // current_period_end is in seconds, convert to milliseconds
+      const endsAt = subscription.current_period_end
+        ? new Date(subscription.current_period_end * 1000)
+        : null
 
       await supabase.from('subscriptions').insert({
         user_id: userId,
@@ -51,7 +56,7 @@ export async function POST(req: NextApiRequest, res: NextApiResponse) {
             ? 'monthly'
             : 'yearly',
         price: subscription.items.data[0].price.unit_amount! / 100,
-        ends_at: new Date(subscription.current_period_end * 1000),
+        ends_at: endsAt,
       })
 
       await supabase
