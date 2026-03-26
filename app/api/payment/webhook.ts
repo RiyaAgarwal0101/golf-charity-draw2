@@ -20,29 +20,26 @@ export async function POST(req: NextApiRequest, res: NextApiResponse) {
       sig,
       process.env.STRIPE_WEBHOOK_SECRET!
     )
-  } catch (err: unknown) {
-    // Type-safe error handling
-    const message =
-      err instanceof Error ? err.message : 'Unknown error during webhook'
-    return res.status(400).send(`Webhook Error: ${message}`)
+  } catch (err: any) {
+    return res.status(400).send(`Webhook Error: ${err.message}`)
   }
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session
-    const customer = await stripe.customers.retrieve(session.customer as string)
 
-    // Only continue if customer is not deleted
-    if ('deleted' in customer && customer.deleted) {
-      return res.status(400).send('Customer was deleted')
-    }
+    // Retrieve the customer and cast to Stripe.Customer
+    const customer = (await stripe.customers.retrieve(
+      session.customer as string
+    )) as Stripe.Customer
 
-    const userId = customer.metadata?.user_id // safe now
+    const userId = customer.metadata?.user_id // set this when creating session
     if (!userId) return res.status(200).json({})
 
     if (session.mode === 'subscription') {
-      const subscription = await stripe.subscriptions.retrieve(
+      // Retrieve the subscription and cast to Stripe.Subscription
+      const subscription = (await stripe.subscriptions.retrieve(
         session.subscription as string
-      )
+      )) as Stripe.Subscription
 
       await supabase.from('subscriptions').insert({
         user_id: userId,
