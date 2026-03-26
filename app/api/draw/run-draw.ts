@@ -2,6 +2,23 @@
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/auth'
 
+type User = {
+  id: string
+  role: string
+}
+
+type Subscription = {
+  user_id: string
+  price: number
+}
+
+type Draw = {
+  id: string
+  month: string
+  status: string
+  jackpot_rollover: number
+}
+
 export async function POST(req: NextRequest) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -13,7 +30,6 @@ export async function POST(req: NextRequest) {
 
   const now = new Date()
   const month = new Date(now.getFullYear(), now.getMonth(), 1)
-  const monthStr = month.toISOString().split('T')[0]
 
   // 1. Get active subscribers
   const { data: subs, error: subErr } = await supabase
@@ -23,20 +39,27 @@ export async function POST(req: NextRequest) {
 
   if (subErr) return Response.json({ error: subErr.message }, { status: 500 })
 
-  const totalPool = subs.reduce((acc, s) => acc + s.price, 0)
+  const activeSubs: Subscription[] = subs || []
+
+  const totalPool = activeSubs.reduce((acc: number, s: Subscription) => acc + s.price, 0)
 
   // 2. Get last draw (for rollover)
-  const { data: lastDraw } = await supabase
+  const { data: lastDrawData, error: lastDrawErr } = await supabase
     .from('draws')
-    .select('*')
+    .select('jackpot_rollover')
     .order('month', { ascending: false })
     .limit(1)
 
+  if (lastDrawErr) return Response.json({ error: lastDrawErr.message }, { status: 500 })
+
   const jackpotBase = totalPool * 0.4
-  const jackpot = lastDraw?.length ? lastDraw[0].jackpot_rollover + jackpotBase : jackpotBase
+  const jackpot =
+    lastDrawData && lastDrawData.length > 0
+      ? lastDrawData[0].jackpot_rollover + jackpotBase
+      : jackpotBase
 
   // 3. Create this month’s draw
-  const { data: draw, error: drawErr } = await supabase
+  const { data: drawData, error: drawErr } = await supabase
     .from('draws')
     .insert({
       month,
@@ -46,11 +69,14 @@ export async function POST(req: NextRequest) {
     .select()
     .single()
 
-  if (drawErr) return Response.json({ error: drawErr.message }, { status: 500 })
+  if (drawErr || !drawData) return Response.json({ error: drawErr?.message || 'Draw creation failed' }, { status: 500 })
+
+  const draw: Draw = drawData
 
   // 4. For each subscriber, pick 5 numbers (1–45) and save
-  for (const sub of subs) {
+  for (const sub of activeSubs) {
     const userNumbers: number[] = []
+
     while (userNumbers.length < 5) {
       const n = Math.floor(Math.random() * 45) + 1
       if (!userNumbers.includes(n)) userNumbers.push(n)
@@ -65,5 +91,5 @@ export async function POST(req: NextRequest) {
 
   // 5. Run simulation / publish logic here (match 3/4/5, calc payouts, etc.)
 
-  return Response.json({ ok: true })
+  return Response.json({ ok: true, jackpot })
 }
