@@ -15,14 +15,24 @@ export async function POST(req: NextApiRequest, res: NextApiResponse) {
   let event: Stripe.Event
 
   try {
-    event = stripe.webhooks.constructEvent(buf, sig, process.env.STRIPE_WEBHOOK_SECRET!)
-  } catch (err) {
-    return res.status(400).send(`Webhook Error: ${err.message}`)
+    event = stripe.webhooks.constructEvent(
+      buf,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET!
+    )
+  } catch (err: unknown) {
+    // ✅ Type-safe error handling
+    if (err instanceof Error) {
+      return res.status(400).send(`Webhook Error: ${err.message}`)
+    }
+    return res.status(400).send('Webhook Error: unknown error')
   }
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session
-    const customer = await stripe.customers.retrieve(session.customer as string)
+    const customer = await stripe.customers.retrieve(
+      session.customer as string
+    )
     const userId = customer.metadata?.user_id // set this when creating session
 
     if (!userId) return res.status(200).json({})
@@ -35,12 +45,17 @@ export async function POST(req: NextApiRequest, res: NextApiResponse) {
         user_id: userId,
         stripe_subscription_id: subscription.id,
         status: subscription.status,
-        plan: subscription.items.data[0].price.id === process.env.NEXT_PUBLIC_MONTHLY_PRICE_ID ? 'monthly' : 'yearly',
+        plan:
+          subscription.items.data[0].price.id ===
+          process.env.NEXT_PUBLIC_MONTHLY_PRICE_ID
+            ? 'monthly'
+            : 'yearly',
         price: subscription.items.data[0].price.unit_amount! / 100,
         ends_at: new Date(subscription.current_period_end * 1000),
       })
 
-      await supabase.from('users')
+      await supabase
+        .from('users')
         .update({ role: 'subscriber', stripe_customer_id: session.customer })
         .eq('id', userId)
     }
