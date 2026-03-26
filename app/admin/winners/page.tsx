@@ -10,7 +10,7 @@ export default async function AdminWinnersPage() {
   const { data: winners } = await supabase
     .from('draw_results')
     .select('*, draw_id(*), user_id(*)')
-    .is('prize_amount', 'not.eq', 0)
+    .neq('prize_amount', 0)
     .order('matching_count', { ascending: false })
 
   return (
